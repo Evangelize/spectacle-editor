@@ -22,7 +22,10 @@ export default {
   resolve: {
     extensions: ["", ".js", ".jsx"],
     packageMains: ["webpack", "browser", "web", "browserify", ["jam", "main"], "main"],
-    modulesDirectories: ["node_modules", "app/node_modules"]
+    modulesDirectories: ["node_modules", "app/node_modules"],
+    alias: {
+      react: path.resolve("./node_modules/react")
+    }
   },
   plugins: [
 

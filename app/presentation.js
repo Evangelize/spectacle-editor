@@ -6,6 +6,6 @@ import "./app.global.css";
 
 
 render(
-  <Presentation />,
+  <Presentation remote />,
   document.getElementById("root")
 );

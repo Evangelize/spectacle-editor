@@ -8,7 +8,7 @@ const config = {
 
   debug: true,
 
-  devtool: "source-map",
+  devtool: "inline-source-map",
 
   entry: {
     bundle: [

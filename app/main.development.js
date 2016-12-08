@@ -1,5 +1,8 @@
 import { app, BrowserWindow, Menu, crashReporter, shell, ipcMain, dialog } from "electron";
 import fs from "fs";
+import { Server } from "ws";
+import portfinder from "portfinder";
+import bonjour from "bonjour";
 
 let menu;
 let template;
@@ -9,8 +12,88 @@ let pdfWindow = null;
 let screencapWindow = null;
 let hidden = false;
 let promptToSave = false;
+let state = {
+  state: {
+    fragment: {
+      fragments: {}
+    },
+    route: {
+      slide: 0,
+      params: []
+    },
+    style: {
+      globalStyleSet: true
+    }
+  },
+  type: "REMOTE_STATE"
+};
+
+let content;
 
 app.commandLine.appendSwitch("--ignore-certificate-errors");
+
+portfinder.basePort = 9001;
+portfinder.getPort((err, port) => {
+  const bonjourService = bonjour();
+  const wss = new Server(
+    { port },
+    () => {
+      console.log("server started");
+      bonjourService.publish({ name: "spectacle-server", type: "spectacle", port });
+      bonjourService.find({ type: "spectacle" }, (service) => {
+        console.log("Found an spectacle server:", service);
+      });
+    }
+  );
+  wss.on("connection", (ws) => {
+    // const location = url.parse(ws.upgradeReq.url, true);
+    // you might use location.query.access_token to authenticate or share sessions
+    // or ws.upgradeReq.headers.cookie (see http://stackoverflow.com/a/16395220/151312)
+    ws.on("message", (message) => {
+      const payload = JSON.parse(message);
+      // console.log('received: ', util.inspect(message, false, null));
+      state = payload;
+      wss.clients.forEach((client) => {
+        if (client !== ws) client.send(message);
+      });
+      if (presWindow) {
+        presWindow.webContents.send("message", state);
+      }
+    });
+
+    ws.on("close", () => {
+      console.log("socket disconnected");
+    });
+
+    ws.send(
+      JSON.stringify([
+        content,
+        state
+      ]),
+    );
+
+    /**
+    state.forEach(function (op) {
+      ws.send(op);
+    });
+    **/
+  });
+
+  ipcMain.on("socket-send", (event, data) => {
+    wss.clients.forEach((client) => {
+      client.send(data);
+    });
+  });
+  ipcMain.on("update-presentation", (event, data) => {
+    content = {
+      type: "INIT_CONTENT",
+      payload: data
+    };
+    wss.clients.forEach((client) => {
+      client.send(JSON.stringify(content));
+    });
+  });
+});
 
 const handleRedirect = (webContents, e, url) => {
   if (url !== webContents.getURL()) {
@@ -112,6 +195,7 @@ const playSlideShow = () => {
   presWindow.loadURL(`file://${__dirname}/presentation.html`);
 
   presWindow.webContents.on("did-finish-load", () => {
+    console.log("trigger-update");
     mainWindow.webContents.send("trigger-update");
     presWindow.show();
     presWindow.focus();
@@ -120,6 +204,8 @@ const playSlideShow = () => {
   presWindow.on("closed", () => {
     presWindow = null;
   });
+
+  presWindow.openDevTools();
 
   presWindow.webContents.on("will-navigate", handleRedirect.bind(null, presWindow.webContents));
   presWindow.webContents.on("new-window", handleRedirect.bind(null, presWindow.webContents));
@@ -188,6 +274,7 @@ app.on("ready", () => {
   mainWindow.webContents.on("did-finish-load", () => {
     mainWindow.show();
     mainWindow.focus();
+    mainWindow.webContents.send("trigger-update");
   });
 
   mainWindow.webContents.on("will-navigate", handleRedirect.bind(null, mainWindow.webContents));
