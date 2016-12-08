@@ -1,17 +1,30 @@
 import { ipcRenderer } from "electron";
 import React, { Component, PropTypes } from "react";
 import { Viewer } from "spectacle-editor-viewer";
+import Socket from "../components/utils/socket";
 
 class Presentation extends Component {
   static propTypes = {
-    screenCapture: PropTypes.bool
+    screenCapture: PropTypes.bool,
+    remote: PropTypes.bool
   };
 
   constructor(props) {
     super(props);
-    this.lastCurrentSlideIndex = 0;
+    let socket = null;
+    if (props.remote) {
+      socket = new Socket();
+      ipcRenderer.on("message", (event, data) => {
+        socket.message(data);
+      });
 
+      socket.on("send", (data) => {
+        ipcRenderer.send("socket-send", data);
+      });
+    }
+    this.lastCurrentSlideIndex = 0;
     ipcRenderer.on("update", (event, data) => {
+      console.log("update", data);
       this.setState({
         currentSlideIndex: data.currentSlideIndex,
         content: {
@@ -21,8 +34,20 @@ class Presentation extends Component {
     });
 
     this.state = {
-      content: null
+      content: null,
+      socket
     };
+  }
+
+  componentDidMount() {
+    const { socket } = this.state;
+
+    if (socket) {
+      this.onNextFrame(() => {
+        console.log("socket setup");
+        socket.emit("open");
+      });
+    }
   }
 
   componentDidUpdate() {
@@ -42,7 +67,20 @@ class Presentation extends Component {
     }
   }
 
+  onNextFrame(callback) {
+    setTimeout(() => {
+      window.requestAnimationFrame(callback);
+    });
+  }
+
   render() {
+    const { socket } = this.state;
+    if (socket) {
+      this.onNextFrame(() => {
+        console.log("socket setup");
+        socket.emit("open");
+      });
+    }
     return (
       <div>
         <style>
@@ -64,7 +102,7 @@ class Presentation extends Component {
           `}
           </style>
         }
-        {this.state.content && <Viewer content={this.state.content} />}
+        {this.state.content && <Viewer content={this.state.content} remote={socket} />}
       </div>
     );
   }
